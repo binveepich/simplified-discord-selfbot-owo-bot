@@ -1,79 +1,171 @@
+# Simplified OwO Discord Selfbot ✨
 
-# Discord OwO Selfbot
+> Một công cụ tự động hoá cho Discord, tập trung vào hệ thống lệnh **OwO** với giao diện terminal gọn gàng, cấu hình linh hoạt và nhiều chế độ chạy thông minh.
 
-An Advanced OwO Selfbot Helps You To Earn Cowoncy Automatically!
-#### THIS PROJECT HASN'T RECEIVED ANY UPDATES AND BUG FIXING FOR A LONG TIME PLEASE CONSIDER USING ANOTHER PROGRAM
-* ### [Download Lastest Release](https://github.com/ahihiyou20/discord-selfbot-owo-bot/tags)
-[![GitHub issues](https://img.shields.io/github/issues/ahihiyou20/discord-selfbot-owo-bot?label=Open%20%C4%B0ssues)](https://github.com/ahihiyou20/discord-selfbot-owo-bot/issues)
-[![GitHub forks](https://img.shields.io/github/forks/ahihiyou20/discord-selfbot-owo-bot)](https://github.com/ahihiyou20/discord-selfbot-owo-bot/network)
-[![GitHub stars](https://img.shields.io/github/stars/ahihiyou20/discord-selfbot-owo-bot)](https://github.com/ahihiyou20/discord-selfbot-owo-bot/stargazers)
+---
 
+## 📌 Giới thiệu
 
+**Simplified OwO Discord Selfbot** là một project Python được thiết kế để tự động hoá các tác vụ thường dùng trong kênh Discord, đặc biệt là các lệnh liên quan đến **OwO** như:
 
-## WARNING
+- `hunt`
+- `battle`
+- `pray`
+- `daily`
+- `sell`
+- `exp / owo`
+- `gems`
 
-#### This Project Is For Education Purpose! Selfbot are against Discord's ToS and against OwO's Rules! Use It At Your Own Risk!
+Project được chia thành nhiều module rõ ràng: `main.py` điều phối luồng chính, `gems.py` xử lý logic gems, `data.py` quản lý cấu hình, `menu.py` lo phần giao diện terminal, `color.py` xử lý màu sắc, và `exception.py` ghi nhận lỗi khi phát sinh.  
 
+---
 
-## Authors
+## ✨ Tính năng nổi bật
 
-- [@ahihiyou20](https://www.github.com/ahihiyou20)
+- Tự động gửi lệnh `hunt` và `battle` theo chu kỳ.
+- Hỗ trợ `pray`, `daily`, `sell`, `exp` và `gems`.
+- Có cơ chế kiểm tra captcha / ban để dừng bot kịp thời.
+- Hỗ trợ webhook thông báo khi có sự cố.
+- Có lệnh selfbot riêng để bật/tắt từng chế độ ngay trong Discord.
+- Giao diện console có logo, màu sắc và hiển thị trạng thái hoạt động đẹp mắt.
+- Đọc toàn bộ cấu hình từ `settings.json`, dễ chỉnh sửa và bảo trì.
 
+---
 
-## Features
+## 🧩 Công nghệ sử dụng
 
-- Automatically Stop If Captcha Is Asked And Sent Through Discord Webhook
-- Automatically Use Gems
-- Automatically Send Random Quotes To Increase EXP
-- Automatically Change Channel
-- Automatically Pray
-- Automatically Stop After A Period Time
-- Automatically Send Hunt And Battle
-- Automatically Sell Animals For Cowoncy
-- Automatically Claim Daily
-- Automatically Solve Captcha (Beta)
-- Cross platform (Windows, Linux, ...)
-- And MORE...!
-## Installation
+- Python 3.x
+- `discum`
+- `requests`
+- `inputimeout`
+- `discord-webhook`
 
-Install discord-selfbot-owo-bot with Python and Github
+---
 
-Clone The Project
-
-```bash
-  git clone https://github.com/ahihiyou20/discord-selfbot-owo-bot.git
-```
-
-Go To The Project Directory
+## 📂 Cấu trúc dự án
 
 ```bash
-  cd discord-selfbot-owo-bot/source
-```
+.
+├── main.py
+├── gems.py
+├── menu.py
+├── data.py
+├── color.py
+├── exception.py
+├── version.py
+├── settings.json
+├── requirements.txt
+└── README.md
+````
 
-Install Dependencies
+---
+
+## ⚙️ Yêu cầu cài đặt
+
+Hãy đảm bảo bạn đã cài:
+
+* Python 3.10+ (khuyên dùng)
+* pip
+
+Sau đó cài dependencies:
 
 ```bash
-  python -m pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
-Start Your Own Selfbot
+---
+
+## 🛠️ Cấu hình
+
+Toàn bộ cấu hình nằm trong file `settings.json`.
+
+### Mẫu cấu hình:
+
+```json
+{
+  "token": "",
+  "channel": "",
+  "gm": "YES",
+  "sm": "YES",
+  "pm": "YES",
+  "em": {
+    "text": "YES",
+    "owo": "YES"
+  },
+  "webhook": {
+    "link": null,
+    "ping": null
+  },
+  "sbcommands": {
+    "enable": "NO",
+    "prefix": ".",
+    "allowedid": null
+  },
+  "daily": "YES",
+  "stop": "9000",
+  "sell": {
+    "enable": "YES",
+    "types": "all"
+  }
+}
+```
+
+### Ý nghĩa một số trường quan trọng
+
+* `token`: token tài khoản Discord
+* `channel`: ID kênh cần bot hoạt động
+* `gm`: bật/tắt chế độ gems
+* `sm`: bật/tắt sleep mode
+* `pm`: bật/tắt pray mode
+* `em.text`: bật/tắt gửi text ngẫu nhiên
+* `em.owo`: bật/tắt gửi `owo / uwu`
+* `webhook.link`: đường dẫn webhook Discord
+* `webhook.ping`: ID người nhận ping khi có cảnh báo
+* `sbcommands.prefix`: tiền tố lệnh selfbot
+* `sbcommands.allowedid`: ID được phép dùng lệnh selfbot
+* `daily`: bật/tắt tự claim daily
+* `stop`: thời gian dừng sau bao nhiêu giây
+* `sell.enable`: bật/tắt auto sell
+* `sell.types`: loại vật phẩm cần sell
+
+---
+
+## 🚀 Cách chạy
+
+Sau khi cấu hình xong `settings.json`, chạy:
 
 ```bash
-  python main.py
+python main.py
 ```
 
-Or
+---
 
-```bash
- cd discord-selfbot-owo-bot/main
-```
+## ⌨️ Lệnh selfbot hỗ trợ
 
-Start Your Selfbot
+Nếu bật `sbcommands`, bạn có thể dùng:
 
-```bash
- Auto.exe
-```
-    
+* `.send <nội dung>` — gửi tin nhắn tuỳ ý
+* `.restart` — khởi động lại chương trình
+* `.exit` — thoát chương trình
+* `.gm on/off` — bật/tắt gems mode
+* `.pm on/off` — bật/tắt pray mode
+* `.sm on/off` — bật/tắt sleep mode
+* `.em on/off` — bật/tắt exp mode
+* `.gems` — kích hoạt xử lý gems thủ công
+
+> Lưu ý: thay dấu `.` bằng prefix bạn đặt trong `settings.json`.
+
+---
+
+## 🔒 An toàn & lưu ý
+
+* Hãy kiểm tra kỹ `token` và `channel` trước khi chạy.
+* Nên dùng trên môi trường thử nghiệm trước khi áp dụng thực tế.
+* Project có cơ chế phát hiện lỗi, captcha/ban và sẽ dừng khi gặp tình huống bất thường.
+* Một số tính năng có thể thay đổi tuỳ vào cập nhật từ phía Discord hoặc bot đích.
+
+---
+
 ## FAQ
 
 #### How Much Money It Can Earn In One Day?
@@ -92,22 +184,29 @@ Yes, Only If You Don't Solve The Captcha From OwO. This Selfbot Will Automatical
 
 Yes, Termux Apps Can Run Python Codes And Others Programming Language Like Git Or Javascript. You Can Use It To Install The Selfbot With The Given Tutorial. More Information: https://termux.com/
 
-Have More Questions? Feel Free To Open Issues Or Contact Me On Discord: Saki Saki#0348 
-## License
+Have More Questions? Feel Free To Open Issues Or Contact Me On Discord: [join my discord server](https://discord.gg/c7tRHWKhhP) then tag @youzke
+
+---
+
+## 🏷️ Phiên bản
+
+Hiện tại project đang ở phiên bản:
+
+```bash
+0.0.1
+```
+
+---
+
+## 📜 License
 
 [GNU GPLv3](https://choosealicense.com/licenses/gpl-3.0/)
 
+---
 
-## Screenshots
+## 🙌 Kết
 
-![Preview](https://cdn.discordapp.com/attachments/963047907030892558/977820177171382312/Screenshot_20220522-132751_Termux.jpg)
-![Preview 2](https://cdn.discordapp.com/attachments/915258272179707964/977823708754366474/Screenshot_20220522-134105_Termux.jpg)
+Cảm ơn bạn đã ghé qua project này.
+Nếu thấy hữu ích, hãy để lại ⭐ để ủng hộ nhé!
 
-
-## Contributing
-
-Contributions Are Always Welcome!
-
-To Get Started, Create An Issue And I Will Reply As Soon As I Can!
-
-Thanks.
+```

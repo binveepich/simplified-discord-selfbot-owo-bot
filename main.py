@@ -1,693 +1,627 @@
-# Import Necessary Modules
-import discord
-import aiohttp
-import logging
-import asyncio
+#!/usr/bin/python
 
-# Import Extra Modules
-from logging.config import dictConfig
-from os import path
-from discord.ext import tasks
-from discord import Webhook, AsyncWebhookAdapter
-from json import load
-from random import randrange
-from re import findall
+from os import execl, name, system
+from sys import executable, argv
+from signal import signal, SIGINT
+from time import sleep, time
 from datetime import timedelta
-from time import time
-from base64 import b64encode
+import atexit
+import random
+import ctypes
+from re import findall
+import json
+import logging
+from threading import Lock
 
+from requests import get
+import discum
+from discord_webhook import DiscordWebhook
 
-class CustomFormatter(logging.Formatter):
-    """A Custom Formatter Class For Logging"""
+from menu import UI
+from color import color
+from data import data
+from gems import gems
 
-    # Escape Color Character
-    GREY = "\x1b[38;5;240m"
-    YELLOW = "\x1b[0;33m"
-    CYAN = "\x1b[1;94m"
-    RED = "\x1b[1;31m"
-    BRIGHT_RED = "\x1b[1;41m"
-    RESET = "\x1b[0m"
-    FORMAT = "\x1b[0;43m%(asctime)s\x1b[0m - {}%(levelname)s{} - %(message)s"
+# Configure logging
+logger = logging.getLogger(__name__)
 
-    # Format Color For Each Level
-    FORMATS = {
-        logging.DEBUG: FORMAT.format(GREY, RESET) + "(%(filename)s:%(lineno)d)",
-        logging.INFO: FORMAT.format(CYAN, RESET),
-        logging.WARNING: FORMAT.format(YELLOW, RESET),
-        logging.ERROR: FORMAT.format(RED, RESET) + "(%(filename)s:%(lineno)d)",
-        logging.CRITICAL: FORMAT.format(BRIGHT_RED, RESET)
-        + "(%(filename)s:%(lineno)d)",
-    }
+# Locks & timing
+cmd_lock = Lock()
+last_global_cmd_time = 0
+GLOBAL_DELAY = 5  # tối thiểu 5s giữa mọi lệnh
 
-    def format(self, record):
-        """
-        Format Function (Method)
-        """
-        log_fmt = self.FORMATS.get(record.levelno)
-        formatter = logging.Formatter(log_fmt, "%d %b %Y %H:%M:%S")
-        return formatter.format(record)
+# Random delay config
+wbm = [10, 30]
 
+# Initialize
+ui = UI()
+client = data()
+start_time = time()
 
-class Data:
-    """A Class Which Load The Data From "config.json" or From Specified Path"""
+last_cmd_time = {}
+CMD_COOLDOWN = {
+    "hunt": 15,
+    "battle": 15,
+    "pray": 120
+}
+errors = []
+# Check token
+if not hasattr(client, 'token') or not client.token:
+    errors.append("TOKEN is missing in settings.json")
+# Check channel
+if not hasattr(client, 'channel') or not client.channel:
+    errors.append("Channel ID is missing in settings.json")
+# Nếu có lỗi → in tất cả rồi exit
+if errors:
+    for err in errors:
+        ui.slowPrinting(f"{color.fail} !!! [ERROR] !!! {color.reset} {err}")
+        sleep(1)
+    raise SystemExit
+# Nếu ok hết thì mới chạy tiếp
+client.check()
 
-    def __init__(self):
-        """
-        Initialize And Fetch conf.json
-        """
-        self.CONFIG_PATH = (
-            "conf.json"
-            if path.exists("conf.json")
-            else input("Enter Path To Your Config File: ")
-        )
-        self.loader()
-
-    def loader(self):
-        """
-        Function (Method) Which Loads Data From conf.json
-        """
-        with open(self.CONFIG_PATH, "r") as file:
-            data = load(file)
-            self.token = data["token"]  # Account's Token (str)
-            self.channel = data["channel"]  # Channel ID (int)
-            self.gm = data["gm"]  # Automatically Uses Gems (bool)
-            self.pm = data["pm"]  # Automatically Pray (bool)
-            self.em = data[
-                "em"
-            ]  # Automatically Send Random Text or "owo" For EXP ( {"text": bool, "owo": bool} )
-            self.sm = data[
-                "sm"
-            ]  # Pause for 3 Minute Every 5 Min To Reduce Chance Getting Verification (bool)
-            self.sbcommands = data[
-                "sbcommands"
-            ]  # Data About Selfbot's Commands ( {"enable": bool, "prefix": str, "allowed_id": int})
-            self.webhook = data[
-                "webhook"
-            ]  # Webhook's Data, Which Used To Send Warning If There's Verification ( {"link": str, "ping": int} )
-            self.daily = data["daily"]  # Automatically Claim Daily (bool)
-            self.sell = data[
-                "sell"
-            ]  # Automatically Sell Animals ( {"enable": bool, "types": str})
-            self.solve = data[
-                "solve"
-            ]  # Automatically Solve Verification Using Captcha Solving API (bool)
-
-
-class Gems:
-    """
-    A Class Which Can Be Used To Equip Gems Automatically
-    """
-
-    def __init__(self):
-        """
-        Intialize Some Attribute
-        """
-        self.available = [1, 3, 4]
-        self.gemtypes = [1, 3, 4]
-        self.regex = r"gem(\d):\d+>`\[(\d+)"
-
-    async def use_gems(self, target=[1, 3, 4]):
-        """
-        A Function (Method) That Uses Requested Gems
-        """
-
-        # This One Is Hard To Explain But...
-        # It Convert Gem(s)' Code Into Index Number 0,1,2
-        for index, value in enumerate(target):
-            match value:
-                case 1:
-                    target[index] = 0
-                case 3:
-                    target[index] = 1
-                case 4:
-                    target[index] = 2
-
-        # Fetch The Inventory
-        await self.channel.trigger_typing()
-        await asyncio.sleep(3)
-        await self.channel.send("owo inv")
-        logger.info("Using Gems...")
-        await asyncio.sleep(3)
-        async for message in self.channel.history(limit=15):
-            if message.author == self.get_user(self.owo) and (
-                await self.message_includes(message, "Inventory", True)
-            ):
-                inv = findall(r"`(.*?)`", message.content)
-                break
-
-        # Couldn't Fetch The Inventory
-        if not inv:
-            logger.error("Couldn't Fetch Inventory Due To Unexpected Reason")
+def move_window_to_center():
+    try:
+        if name != "nt":
             return
 
-        # Use Lootbox(es) If Available
-        if "050" in inv:
-            await self.channel.send("owo lootbox all")
-            logger.info("Opened All Lootboxes")
-            await asyncio.sleep(3)
-            self.available = [1, 3, 4]
-            await self.use_gems(target)
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
 
-        # Convert Raw Inventory To A List of Gem Code (Intenger)
-        inv = [
-            item
-            for item in inv
-            if item.isdigit() and int(item) < 100 and int(item) > 50
-        ]
-        logger.info(f"Found {len(inv)} Gem(s)")
-
-        # Parse Gems Into Multiple Types
-        types = [[], [], []]
-        for gem in inv:
-            gem = int(gem)
-            if 50 < gem < 58:
-                types[0].append(
-                    gem
-                )  # Hunting (Diamond) Gems, Which Increases Numbers of Animals Caught
-            elif 64 < gem < 72:
-                types[1].append(
-                    gem
-                )  # Empowering (Round) Gems, Which Doubles The Number of Animals caught
-            elif 71 < gem < 79:
-                types[2].append(
-                    gem
-                )  # Lucky (Heart) Gems, Which Increases The Chance of Finding Gem Animals
-
-        # Update Available Gems
-        self.available = []
-        if types[0]:
-            self.available.append(1)
-        if types[1]:
-            self.available.append(3)
-        if types[2]:
-            self.available.append(4)
-
-        # Use The Requested Gems
-        use = []
-        for level in target:
-            if types[level]:
-                use.append(str(max(types[level])))
-
-        # Send Command
-        if use:
-            await asyncio.sleep(3)
-            await self.channel.send(f"owo use {' '.join(use)}")
-            logger.info(f"Used Gem(s): {' '.join(use)}")
-            return
-        logger.warning("You Don't Have Any Available Gems")
-
-    async def detect_gems(self, message):
-        """
-        This Function (Method) Is The Reason Why The Selfbot Knows When The Gems Run Out
-        """
-
-        # Fetch Only Hunt Messages
-        if not (await self.message_includes(message, "**🌱", True)):
+        hwnd = kernel32.GetConsoleWindow()
+        if not hwnd:
             return
 
-        # Fetch Available Gems
-        current_gems = [
-            gem for gem in findall(self.regex, message.content) if not gem[1] == "0"
-        ]
+        # Lấy kích thước màn hình chính (monitor 1)
+        screen_width = user32.GetSystemMetrics(0)
+        screen_height = user32.GetSystemMetrics(1)
 
-        # Check If Any Gem Is Not Available
-        use = [1, 3, 4]
-        if len(current_gems) == 3:
-            return
+        # Kích thước window hiện tại
+        rect = ctypes.wintypes.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(rect))
 
-        # Calculate The Gem Which Needs To Be Used
-        for gem in current_gems:
-            use.remove(int(gem[0]))
+        win_width = rect.right - rect.left
+        win_height = rect.bottom - rect.top
 
-        use = [gem for gem in use if gem in self.available]
-        if use:
-            # Use The Gem If necessary
-            await self.use_gems(use)
+        # Tính center
+        x = int((screen_width - win_width) / 2)
+        y = int((screen_height - win_height) / 2)
 
+        # Move window
+        user32.MoveWindow(hwnd, x, y, win_width, win_height, True)
 
-class CaptchaSolver:
-    """
-    This Class Solve Verification For You
-    """
+        # Bring to front
+        user32.SetForegroundWindow(hwnd)
 
-    def __init__(self):
-        """
-        Initialize Attributes
-        """
-        self.api = "https://autofarmsupport.tk"  # API's URL
-        self.retries = 0  # Coming Soon
-
-    async def __solve(self, image, length):
-        """
-        A Private Function (Method) Which Is Required To Send And Receive Verification's Result
-        """
-        data = {"data": image, "len": length, "id": str(self.user.id)}
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self.api, json=data, timeout=300) as resp:
-                if resp.ok:
-                    return await resp.json()
-                return False
-
-    async def __report(self, captcha_id, is_correct):
-        """
-        A Private Function (Method) Which Is Required To Fetch And Report The Result To Increase The Accuracy
-        """
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                self.api + "/report",
-                json={"captchaId": captcha_id, "correct": is_correct},
-                timeout=120,
-            ):
-                return
-
-    async def solver(self, message):
-        """
-        A Function (Method) That Solves Verification
-        """
-        try:
-            await self.runner(False)  # Stop Other Progress
-            logger.info("Solving Captcha...")
-            captcha_image = b64encode(await message.attachments[0].read()).decode(
-                "utf-8"
-            )  # Convert The Image Into Base64
-            resp = await self.__solve(
-                captcha_image,
-                message.content[message.content.find("letter word") - 2],
-            )  # Send Request To Solve The Captcha
-            if resp:  # Success
-                logger.debug(resp)
-                # Send The Captcha And Continue Grinding
-                logger.info(f"Solved Captcha [Code: {resp['code']}]")
-                await self.get_user(self.owo).send(resp["code"])
-                await asyncio.sleep(10)
-
-                # Check If The Captcha Was True or Not
-                message = (
-                    await self.get_user(self.owo).dm_channel.history(limit=1).flatten()
-                )[0]
-                if (
-                    message.author == self.get_user(self.owo)
-                    and "verified" in message.content
-                ):
-                    await self.__report(
-                        resp["captchaId"], "True"
-                    )  # Report Correct If Yes
-                    await self.runner(True)  # Continue Grinding If Correct
-                    return True
-                logger.critical(
-                    "Selfbot Stopped Since The Captcha Code Is Wrong"
-                )  # Otherwise Stop Immediately
-                await self.__report(resp["captchaId"], "False")
-            return False
-        except Exception as e:
-            logger.critical(
-                str(e)
-            )  # Make Sure That No Bug Happens (To Keep It Safe, Just Print Out The Issue And Stop)
-            await self.close()
+    except Exception as e:
+        logger.error(f"Move window error: {str(e)}")
 
 
-class Client(discord.Client, Data, Gems, CaptchaSolver):
-    """
-    The Main Client Class, Which Controls The Selfbot
-    """
-
-    def __init__(self, *args, **kwargs):
-        """
-        Initialize Attributes And Methods From Inheritance
-        """
-        discord.Client.__init__(self, *args, **kwargs)
-        Data.__init__(self)
-        Gems.__init__(self)
-        CaptchaSolver.__init__(self)
-
-        self.total_cmds = 0
-        self.next_daily = 0
-        self.owo = 408785106942164992
-
-    async def ask_for_confirmation(self, channel):
-        """
-        A Function (Method) Which Ask For Confirmation When Using Selfbot Commands
-        """
-        await channel.send(
-            "Confirm (YES/NO)? Send Answer Into The Channel (Timeout: 5s)"
-        )
-
-        # Check For The Result
-        try:
-            confirm = await self.wait_for(
-                "message",
-                check=lambda message: message.author
-                in [self.user, self.get_user(self.sbcommands["allowed_id"])]
-                and message.content.lower() in ["yes", "y"],
-                timeout=5.0,
+def trigger_alert(title="ALERT"):
+    try:
+        if name == "nt":
+            ctypes.windll.user32.FlashWindow(
+                ctypes.windll.kernel32.GetConsoleWindow(), True
             )
-        except asyncio.TimeoutError:
-            await channel.send("Cancelled")
-            return False
-        return confirm
+            move_window_to_center() 
+        print('\a')
 
-    async def message_includes(self, message, content, includes_self=False):
-        """
-        A Function (Method) Which Checks If A Message Includes Something
-        """
-        if includes_self:
-            return (
-                content.lower() in message.content.lower()
-                and self.user.name in message.content
-            )
-        return content.lower() in message.content.lower()
+    except Exception as e:
+        logger.error(f"Alert trigger error: {str(e)}")
 
-    async def get_balance(self):
-        """
-        A Function (Method) Which Fetch The Current Balance
-        """
-        await self.channel.send("owo cash")
-        await asyncio.sleep(3)
-        async for message in self.channel.history(limit=15):
-            if message.author == self.get_user(self.owo) and (
-                await self.message_includes(message, "currently", True)
-            ):
-                content = message.content
-                return int(
-                    "".join(findall("[0-9]+", content[content.find("have") : :]))
-                )
-        return self.start_balance
-
-    async def runner(self, mode, ignore=[]):
-        """
-        A Function (Method) Which Runs Tasks To Make The Selfbot Work
-        """
-        tasks = [
-            self.main,
-            self.pray,
-            self.exp,
-            self.claim_daily,
-            self.sell_animal,
-            self.presence,
-            self.sleeper,
-        ]
-
-        try:
-            for task in tasks:
-                if task in ignore:
-                    continue
-                if mode:
-                    task.start()
-                    await asyncio.sleep(2)
-                    continue
-                task.cancel()
-        except RuntimeError:
-            return
-
-    async def on_ready(self):
-        """
-        A Function (Method) Which Will Be Triggered On Ready
-        """
-        self.channel = (
-            self.get_channel(self.channel)
-            if type(self.channel) is int
-            else self.channel
-        )
-        self.start_balance = await self.get_balance()
-
-        logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
-        print("------" * 5)
-        await self.runner(True)
-        await self.runner(True)
-
-    async def on_message(self, message):
-        """
-        A Function (Method) Which Will Be Triggered Everytime A Message Is Send From An User
-        """
-
-        # Check For Verification
-        if message.author == self.get_user(self.owo):
-            if await self.message_includes(message, "⚠", True):
-                if self.webhook["link"]:
-                    async with aiohttp.ClientSession() as session:
-                        webhook = Webhook.from_url(
-                            self.webhook["link"],
-                            adapter=AsyncWebhookAdapter(session),
-                        )
-                        await webhook.send(
-                            f"<@{self.webhook['ping']}> Verification Found!"
-                        )
-                if client.solve:
-                    if message.attachments:
-                        if await self.solver(message):
-                            return
-                    else:
-                        async for message in self.channel.history(limit=15):
-                            if (
-                                message.author == self.get_user(self.owo)
-                                and "captcha" in message.content
-                                and message.attachments
-                            ):
-                                if await self.solver(message):
-                                    return
-                                break
-                logger.critical("Detected Verification!")
-                await self.close()
-            if self.gm:
-                await self.detect_gems(message)
-
-        # Selfbot Commands
-        if not self.sbcommands["enable"]:
-            return
-
-        if message.author.id not in (
-            self.user.id,
-            self.sbcommands["allowed_id"],
-        ):
-            return
-
-        if message.content.startswith(f"{self.sbcommands['prefix']}pr"):
-            confirm = await self.ask_for_confirmation(message.channel)
-            if not confirm:
-                return
-
-            if self.runner.is_running():
-                self.runner(False)
-                logger.info("Paused")
-                return await confirm.reply("Paused!")
-            self.runner.start()
-            logger.info("Resumed")
-            return await confirm.reply("Resumed!")
-
-        if message.content.startswith(f"{self.sbcommands['prefix']}stop"):
-            confirm = await self.ask_for_confirmation(message.channel)
-            if not confirm:
-                return
-
-            await confirm.reply("Stopped!")
-            logger.info("Stopped")
-            await self.close()
-
-    @tasks.loop(seconds=60)
-    async def presence(self):
-        """
-        A Function (Method) Which Initializes A Rich Presence And Display Infomation About The Selfbot (Update Every Minute)
-        """
-        await self.change_presence(
-            status=discord.Status.dnd,
-            activity=discord.Activity(
-                application_id=1053928905288986684,
-                type=discord.ActivityType.playing,
-                name="Statistics (Update Every Minute)",
-                state=f"Hunt/Battle: {self.total_cmds} times",
-                details=f"Gained {(await self.get_balance()) - self.start_balance:,} Cowoncies",
-                timestamps={"start": time() - (60 * self.presence.current_loop)},
-                assets={
-                    "large_image": "1059027556671705098",
-                    "large_text": "OwO Self-bot",
-                    "small_image": "1059360660204564510",
-                    "small_text": "Made By ahihiyou20",
-                },
-            ),
-        )
-
-    @tasks.loop(seconds=randrange(14, 19))
-    async def main(self):
-        """
-        A Function (Method) That Sends Hunt/Battle
-        """
-        await self.channel.trigger_typing()
-        await self.channel.send("owo hunt")
-        logger.info('Sent "owo hunt"')
-        self.total_cmds += 1
-        await asyncio.sleep(3)
-
-        await self.channel.send("owo battle")
-        logger.info('Sent "owo battle"')
-        self.total_cmds += 1
-
-    @tasks.loop(minutes=4)
-    async def pray(self):
-        """
-        A Function (Method) That Sends Pray
-        """
-        await self.channel.trigger_typing()
-        await self.channel.send("owo pray")
-        logger.info('Sent "owo pray"')
-        await asyncio.sleep(randrange(4, 9))
-
-    @tasks.loop(seconds=30)
-    async def exp(self):
-        """
-        A Function (Method) Which Send Random Text or "owo" for EXP
-        """
-        if self.em["text"]:
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=10)
-            ) as session:
-                async with session.get("http://api.quotable.io/random") as resp:
-                    text = (await resp.json())["content"] if resp.ok else None
-
-            if text:
-                await self.channel.trigger_typing()
-                await self.channel.send(text)
-                logger.info("Sent Random Text For EXP")
-                await asyncio.sleep(3)
-
-        if self.em["owo"]:
-            await self.channel.trigger_typing()
-            await self.channel.send("owo")
-            logger.info('Sent "owo"')
-        await asyncio.sleep(randrange(4, 9))
-
-    @tasks.loop(seconds=30)
-    async def claim_daily(self):
-        """
-        A Function (Method) Which Automatically Claim Daily
-        """
-        if not self.next_daily - time() <= 0:
-            return
-
-        await self.channel.trigger_typing()
-        await asyncio.sleep(3)
-        await self.channel.send("owo daily")
-        logger.info("Claiming Daily...")
-        await asyncio.sleep(3)
-        target_message = None
-        async for message in self.channel.history(limit=15):
-            if message.author == self.get_user(self.owo) and (
-                await self.message_includes(message, "your daily", True)
-                or await self.message_includes(message, "Nu")
-            ):
-                target_message = message
-                break
-        if not target_message:
-            logger.error("Couldn't Claim Daily Due To Unexpected Reason")
-            return
-        if "Nu" in target_message.content:
-            next_daily = findall("[0-9]+", target_message.content)
-            next_daily = [int(time) for time in next_daily]
-            next_daily = next_daily[0] * 3600 + next_daily[1] * 60 + next_daily[2]
-            self.next_daily = time() + next_daily
-            logger.info(f"Next Daily: {str(timedelta(seconds=next_daily))}s")
-        elif "Your next daily" in target_message.content:
-            logger.info("Claimed Daily!")
-        await asyncio.sleep(randrange(4, 9))
-
-    @tasks.loop(minutes=2)
-    async def sell_animal(self):
-        """
-        A Function (Method) Which Sells Animal Automatically
-        """
-        await self.channel.trigger_typing()
-        await asyncio.sleep(5)
-        await self.channel.send(f"owo sell {self.sell['types']}")
-        logger.info(f"Sold ({self.sell['types']}) Available Animal")
-
-    @tasks.loop(minutes=5)
-    async def sleeper(self):
-        """
-        A Function (Method) That Reduce Chance Getting Verification By Pausing The Bot For 3 Min Every 5 Min
-        """
-
-        # Skip The First 5 Minute
-        if self.sleeper.current_loop == 0:
-            return
-
-        tasks = [
-            self.main,
-            self.pray,
-            self.exp,
-            self.claim_daily,
-            self.sell_animal,
-            self.presence,
-        ]
-        interval_before = [task.seconds for task in tasks]
-
-        for task in tasks:
-            task.change_interval(seconds=360)
-
-        logger.warning("Sleeping...")
-        await asyncio.sleep(randrange(180, 360))
-
-        for index, task in enumerate(tasks):
-            task.change_interval(seconds=interval_before[index])
-
-    # Functions (Methods) Which Will Be Ran Before It's Instance Run
-    @presence.before_loop
-    async def before_presence(self):
-        await self.wait_until_ready()
-
-    @main.before_loop
-    async def before_main(self):
-        await self.wait_until_ready()
-
-    @pray.before_loop
-    async def before_pray(self):
-        if not self.pm:
-            self.pray.cancel()
-        await self.wait_until_ready()
-
-    @exp.before_loop
-    async def before_exp(self):
-        if not self.em["text"] and not self.em["owo"]:
-            self.exp.cancel()
-        await self.wait_until_ready()
-
-    @claim_daily.before_loop
-    async def before_claim_daily(self):
-        if not self.daily:
-            self.claim_daily.cancel()
-        await self.wait_until_ready()
-
-    @sell_animal.before_loop
-    async def before_sell_animal(self):
-        if not self.sell["enable"]:
-            self.sell_animal.cancel()
-        await self.wait_until_ready()
-
-    @sleeper.before_loop
-    async def before_sleeper(self):
-        if not self.sm:
-            self.sleeper.cancel()
-        await self.wait_until_ready()
-
-
-# Disable discord.py-self's Logging
-dictConfig(
-    {
-        "version": 1,
-        "disable_existing_loggers": True,
-    }
-)
-logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
-ch.setFormatter(CustomFormatter())
-logger.addHandler(ch)
-
-# Run The Selfbot
-if __name__ == "__main__":
-    logging.warning("Loading... Please be patient!")
-    client = Client(guild_subscription_options=discord.GuildSubscriptionOptions.off())
+def fatal_error(msg: str):
+    logger.error(msg)
+    ui.slowPrinting(f"{color.fail}[FATAL ERROR]{color.reset} {msg}")
+    logger.error(f"[FATAL] {msg}")
+    trigger_alert("!!! FATAL ERROR !!!")
 
     try:
-        client.run(client.token)
-    except (RuntimeError, KeyboardInterrupt):
+        input(f"\n{color.warning}Nhấn ENTER để thoát...{color.reset}")
+    except:
         pass
+
+    raise SystemExit
+
+def signal_handler(sig: object, frame: object):
+    sleep(0.5)
+    logger.info("Detected Ctrl + C, Stopping...")
+    ui.slowPrinting(f"\n{color.fail}[INFO] {color.reset}Detected Ctrl + C, Stopping...")
+    raise KeyboardInterrupt
+
+signal(SIGINT, signal_handler)
+
+bot = discum.Client(token=client.token, log=False, user_agent=[
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.105 Safari/537.36/PAsMWa7l-11',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.135 YaBrowser/20.8.3.115 Yowser/2.5 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:60.7.2) Gecko/20100101 / Firefox/60.7.2'])
+
+def send_owo_cmd(cmd: str, extra_delay: bool = True) -> None:
+    global last_cmd_time, last_global_cmd_time
+
+    with cmd_lock:  # 🔒 chống spam đa luồng
+        now = time()
+
+        # GLOBAL DELAY (quan trọng nhất)
+        if now - last_global_cmd_time < GLOBAL_DELAY:
+            return
+
+        # CMD COOLDOWN riêng
+        if cmd in last_cmd_time:
+            elapsed = now - last_cmd_time[cmd]
+            if elapsed < CMD_COOLDOWN.get(cmd, 5):
+                return
+
+        try:
+            if extra_delay:
+                bot.typingAction(client.channel)
+                sleep(random.uniform(2.5, 5.5))  # ⬅️ tăng nhẹ delay
+
+            full_cmd = f"owo {cmd}"
+            response = bot.sendMessage(client.channel, full_cmd)
+
+            if response and response.status_code == 429:
+                logger.warning(f"Rate limit khi gửi '{full_cmd}', tạm dừng 120s")
+                sleep(120)
+                return
+
+            # update time NGAY lập tức
+            last_cmd_time[cmd] = now
+            last_global_cmd_time = now
+
+            logger.info(f"Đã gửi: {full_cmd}")
+            ui.slowPrinting(f"{at()}{color.okgreen} [SENT]{color.reset} {full_cmd}")
+            client.totalcmd += 1
+
+        except Exception as e:
+            logger.warning(f"Lỗi gửi lệnh '{cmd}': {str(e)}")
+            ui.slowPrinting(f"{at()}{color.warning} [WARN]{color.reset} Send failed, retry later")
+            sleep(5)
+            return
+
+Gems = gems(bot, start_time)
+
+system('cls' if name == 'nt' else 'clear')
+ui.logo()
+
+def at() -> str:
+    elapsed = int(time() - start_time)
+    h = elapsed // 3600
+    m = (elapsed % 3600) // 60
+    s = elapsed % 60
+    return f'\033[0;43m{h:02}:{m:02}:{s:02}\033[0;21m'
+
+def getMessages(num: int=1, channel: str=client.channel) -> object:
+    messageObject = None
+    retries = 0
+    while not messageObject and retries <= 10:
+        try:
+            messageObject = bot.getMessages(channel, num=num)
+            messageObject = messageObject.json()
+            if not isinstance(messageObject, list):
+                messageObject = None
+            else:
+                break
+            retries += 1
+            sleep(5)
+        except Exception as e:
+            logger.error(f"Error in getMessages: {str(e)}")
+            retries += 1
+            sleep(5)
+    if not messageObject:
+        logger.warning("getMessages failed → returning empty list")
+        return []
+    return messageObject  
+
+@bot.gateway.command
+def on_ready(resp: object) -> None:
+    if resp.event.ready_supplemental:
+        try:
+            client.guildID = bot.getChannel(client.channel).json()['guild_id']
+            for i in range(len(bot.gateway.session.DMIDs)):
+                if client.OwOID in bot.gateway.session.DMs[bot.gateway.session.DMIDs[i]]['recipients']:
+                    client.dmsID = bot.gateway.session.DMIDs[i]
+            user = bot.gateway.session.user
+            logger.info(f"Logged in as {user['username']}#{user['discriminator']}")
+            ui.slowPrinting(f"Logged in as {user['username']}#{user['discriminator']}")
+            ui.slowPrinting('══════════════════════════════════════')
+            ui.slowPrinting(f"{color.purple}Settings: ")
+            ui.slowPrinting(f"Channel: {client.channel}")
+            ui.slowPrinting(f"Gems Mode: {client.gm}")
+            ui.slowPrinting(f"Sleep Mode: {client.sm}")
+            ui.slowPrinting(f"Pray Mode: {client.pm}")
+            ui.slowPrinting(f"EXP Mode: {client.em['text']}")
+            ui.slowPrinting(f"+)Send \"OwO\": {client.em['owo']}")
+            ui.slowPrinting(f"Selfbot Commands Prefix: '{client.sbcommands['prefix']}'")
+            ui.slowPrinting(f"Selfbot Commands Allowedid: {client.sbcommands['allowedid']}")
+            ui.slowPrinting(f"Webhook: {'YES' if client.webhook['link'] else 'NO'}")
+            ui.slowPrinting(f"Webhook Ping: {client.webhook['ping']}")
+            ui.slowPrinting(f"Daily Mode: {client.daily}")
+            ui.slowPrinting(f"{'Stop After (Seconds)' if client.stop and client.stop.isdigit() else 'Stop Mode'}: {client.stop}")
+            ui.slowPrinting(f"Sell Mode: {client.sell['enable']}")
+            ui.slowPrinting(f"Auto Solve Captcha: No Longer Support")
+            ui.slowPrinting('══════════════════════════════════════')
+            if client.stop and client.stop.isdigit() and int(client.stop) < 1800:
+                logger.warning(f"Stop time set to {client.stop}s, which is very short. Consider increasing it.")
+            loopie()
+        except Exception as e:
+            logger.error(f"Error in on_ready: {str(e)}")
+            trigger_alert("!!! SEND CMD ERROR !!!")
+            sleep(60)
+
+def webhookPing(message: str) -> None:
+    if client.webhook['link']:
+        try:
+            webhook = DiscordWebhook(url=client.webhook['link'], content=message)
+            webhook.execute()
+        except Exception as e:
+            logger.error(f"Error in webhookPing: {str(e)}")
+
+@bot.gateway.command
+def security(resp: object) -> None:
+    try:
+        result = None
+        if resp.event.message:
+            result = issuechecker(resp)
+        if result == "captcha":
+            client.stopped = True
+            logger.warning("Captcha/Ban detected, stopping bot")
+            trigger_alert("!!! CAPTCHA / BAN DETECTED !!!") 
+            if client.webhook['ping']:
+                webhookPing(f"<@{client.webhook['ping']}> I Found A Captcha/Ban In Channel: <#{client.channel}>")
+            else:
+                webhookPing(f"<@{client.sbcommands.get('allowedid', bot.gateway.session.user['id'])}> I Found A Captcha/Ban In Channel: <#{client.channel}>")
+            ui.slowPrinting(f'{color.okcyan}[INFO] {color.reset}Captcha/Ban Detected. Bot Stopped.')
+            bot.switchAccount(client.token[:-4] + 'FvBw')
+    except Exception as e:
+        logger.error(f"Error in security: {str(e)}")
+
+def issuechecker(resp: object) -> str:
+    try:
+        m = resp.parsed.auto()
+        if m['channel_id'] == client.channel or m['channel_id'] == client.dmsID and not client.stopped:
+            if m['author']['id'] == client.OwOID or m['author']['username'] == 'OwO' or m['author']['discriminator'] == '8456' and bot.gateway.session.user['username'] in m['content'] and not client.stopped:
+                if 'banned' in m['content'].lower() or any(captcha in m['content'].lower() for captcha in ['(1/5)', '(2/5)', '(3/5)', '(4/5)', '(5/5)', '⚠']) or 'link' in m['content'].lower():
+                    logger.warning(f"Captcha/Ban detected. Message content: {m['content']}")
+                    ui.slowPrinting(f'{at()}{color.warning} !! [CAPTCHA/BAN] !! {color.reset} ACTION REQUIRED')
+                    return "captcha"
+        return None
+    except Exception as e:
+        logger.error(f"Error in issuechecker: {str(e)}")
+        return None
+
+def runner() -> None:
+    global wbm
+    try:
+        # Không cần random command nữa vì giờ dùng text cố định
+        bot.typingAction(client.channel)
+        sleep(random.randint(8, 18))
+
+        if not client.stopped:
+            send_owo_cmd("hunt")
+
+        sleep(random.randint(6, 14))   # delay giữa hunt & battle
+
+        if not client.stopped:
+            send_owo_cmd("battle")
+
+        sleep(random.randint(wbm[0], wbm[1] + 10))  # tăng nhẹ để an toàn hơn
+
+    except Exception as e:
+        logger.warning(f"runner error: {str(e)}")
+        sleep(5)
+
+def owoexp() -> None:
+    global wbm
+    if not hasattr(client, 'quote_count'):
+        client.quote_count = 0
+    if not hasattr(client, 'quote_threshold'):
+        client.quote_threshold = random.randint(2, 4)  # Trước là 3-7
+    if client.em['text'] == "YES" and not client.stopped:
+        try:
+            response = get("https://dummyjson.com/quotes/random")
+            if response.status_code == 200:
+                json_data = response.json()
+                quote = f"{json_data['quote']}"
+                bot.typingAction(client.channel)
+                sleep(random.randint(2, 6))  # Trước là 5-15
+                send_response = bot.sendMessage(client.channel, quote)
+                if send_response.status_code == 429:
+                    logger.warning("Rate limit detected in owoexp, pausing for 120s")
+                    ui.slowPrinting(f"{at()}{color.fail}[ERROR] Rate-limited detected from Discord, pausing for 120s...{color.reset}")
+                    sleep(120)
+                    return
+                logger.info(f"Sent quote: {quote}")
+                ui.slowPrinting(f"{at()}{color.okgreen} [SENT] {color.reset} {quote}")
+                client.totaltext += 1
+                client.quote_count += 1
+                if client.em['owo'] == "YES" and client.quote_count >= client.quote_threshold:
+                    sleep(random.randint(10, 30))  # Trước là 30-90
+                    owo = random.choice(['owo', 'uwu'])
+                    bot.typingAction(client.channel)
+                    sleep(random.randint(2, 6))  # Trước là 5-15
+                    send_response = bot.sendMessage(client.channel, owo)
+                    if send_response.status_code == 429:
+                        logger.warning("Rate limit detected in owoexp (owo/uwu), pausing for 120s")
+                        ui.slowPrinting(f"{at()}{color.fail}[ERROR] Rate-limited detected from Discord, pausing for 120s...{color.reset}")
+                        sleep(120)
+                        return
+                    logger.info(f"Sent owo/uwu: {owo}")
+                    ui.slowPrinting(f"{at()}{color.okgreen} [SENT] {color.reset} {owo}")
+                    client.quote_count = 0
+                    client.quote_threshold = random.randint(2, 4)
+                sleep(random.randint(15, 40))  # Trước là 60-180
+            else:
+                logger.error(f"DummyJSON API failed: {response.status_code}")
+                ui.slowPrinting(f"{color.fail}[ERROR] DummyJSON API failed: {response.status_code}{color.reset}")
+        except Exception as e:
+            logger.warning(f"owoexp error: {str(e)}")
+            sleep(10)
+            return
+
+def owopray() -> None:
+    if client.pm == "YES" and not client.stopped:
+        try:
+            bot.typingAction(client.channel)
+            sleep(random.randint(5, 15))  # Trước là 5-15
+            send_response = bot.sendMessage(client.channel, "owo pray")
+            if send_response.status_code == 429:
+                logger.warning("Rate limit detected in owopray, pausing for 120s")
+                ui.slowPrinting(f"{at()}{color.fail}[ERROR] Rate-limited detected from Discord, pausing for 120s...{color.reset}")
+                sleep(120)
+                return
+            logger.info("Sent command: owo pray")
+            ui.slowPrinting(f"{at()}{color.okgreen} [SENT] {color.reset} owo pray")
+            client.totalcmd += 1
+            sleep(random.randint(60, 120))  # Trước là 60-120
+        except Exception as e:
+            logger.warning(f"owopray error: {str(e)}")
+            sleep(10)
+
+def daily() -> None:
+    if client.daily == "YES" and not client.stopped:
+        bot.typingAction(client.channel)
+        sleep(3)
+        bot.sendMessage(client.channel, "owo daily")
+        ui.slowPrinting(f"{at()}{color.okgreen} [SENT] {color.reset} owo daily")
+        client.totalcmd += 1
+        sleep(3)
+        msgs = getMessages(num=5) or []
+        length = len(msgs)
+        daily_string = ""
+        length = len(msgs)
+        i = 0
+        while i < length:
+            if msgs[i]['author']['id'] == client.OwOID and msgs[i]['content'] != "" and ("Nu" in msgs[i]['content'] or "daily" in msgs[i]['content']):
+                daily_string = msgs[i]['content']
+                i = length
+            else:
+                i += 1
+        if not daily_string:
+            sleep(5)
+            client.totalcmd -= 1
+            daily()
+        else:
+            if "Nu" in daily_string:
+                daily_string = findall('[0-9]+', daily_string)
+                client.wait_time_daily = str(int(daily_string[0]) * 3600 + int(daily_string[1]) * 60 + int(daily_string[2]))
+                ui.slowPrinting(f"{at()}{color.okblue} [INFO] {color.reset} Next Daily: {str(timedelta(seconds=int(client.wait_time_daily)))}s")
+            if "Your next daily" in daily_string:
+                ui.slowPrinting(f"{at()}{color.okblue} [INFO] {color.reset} Claimed Daily")
+
+def sell() -> None:
+    try:
+        sell_type = client.sell.get('types', 'all')
+        bot.typingAction(client.channel)
+        sleep(random.randint(20, 60))
+        bot.sendMessage(client.channel, f"owo sell {sell_type}")
+        logger.info(f"Sent command: owo sell {sell_type}")
+        ui.slowPrinting(f"{at()}{color.okgreen} [SENT] {color.reset} owo sell {sell_type}")
+    except Exception as e:
+        logger.error(f"Error in sell: {str(e)}")
+        sleep(5)
+
+@bot.gateway.command
+def othercommands(resp: object) -> None:
+    try:
+        prefix = client.sbcommands['prefix']
+        with open("settings.json", "r") as f:
+            data = json.load(f)
+        if resp.event.message:
+            m = resp.parsed.auto()
+            if m['author']['id'] == bot.gateway.session.user['id'] or m['channel_id'] == client.channel and m['author']['id'] == client.sbcommands['allowedid']:
+                if prefix == "None":
+                    bot.gateway.removeCommand(othercommands)
+                    return
+                if m['content'].startswith(f"{prefix}send"):
+                    message = m['content'].replace(f'{prefix}send ', '')
+                    bot.sendMessage(str(m['channel_id']), message)
+                    logger.info(f"Sent message: {message}")
+                    ui.slowPrinting(f"{at()}{color.okgreen} [SENT] {color.reset} {message}")
+                if m['content'].startswith(f"{prefix}restart"):
+                    bot.sendMessage(str(m['channel_id']), "Restarting...")
+                    logger.info("Restarting bot")
+                    ui.slowPrinting(f"{color.okcyan}[INFO] Restarting...  {color.reset}")
+                    sleep(1)
+                    execl(executable, executable, *argv)
+                if m['content'].startswith(f"{prefix}exit"):
+                    bot.sendMessage(str(m['channel_id']), "Exiting...")
+                    logger.info("Exiting bot")
+                    ui.slowPrinting(f"{color.okcyan} [INFO] Exiting...  {color.reset}")
+                    bot.gateway.close()
+                if m['content'].startswith(f"{prefix}gm"):
+                    if "on" in m['content'].lower():
+                        client.gm = "YES"
+                        bot.sendMessage(str(m['channel_id']), "Turned On Gems Mode")
+                        logger.info("Turned On Gems Mode")
+                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned On Gems Mode{color.reset}")
+                        with open("settings.json", "w") as file:
+                            data['gm'] = "YES"
+                            json.dump(data, file, indent=4)
+                    if "off" in m['content'].lower():
+                        client.gm = "NO"
+                        bot.sendMessage(str(m['channel_id']), "Turned Off Gems Mode")
+                        logger.info("Turned Off Gems Mode")
+                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned Off Gems Mode{color.reset}")
+                        with open("settings.json", "w") as file:
+                            data['gm'] = "NO"
+                            json.dump(data, file, indent=4)
+                if m['content'].startswith(f"{prefix}pm"):
+                    if "on" in m['content'].lower():
+                        client.pm = "YES"
+                        bot.sendMessage(str(m['channel_id']), "Turned On Pray Mode")
+                        logger.info("Turned On Pray Mode")
+                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned On Pray Mode{color.reset}")
+                        with open("settings.json", "w") as file:
+                            data['pm'] = "YES"
+                            json.dump(data, file, indent=4)
+                    if "off" in m['content'].lower():
+                        client.pm = "NO"
+                        bot.sendMessage(str(m['channel_id']), "Turned Off Pray Mode")
+                        logger.info("Turned Off Pray Mode")
+                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned Off Pray Mode{color.reset}")
+                        with open("settings.json", "w") as file:
+                            data['pm'] = "NO"
+                            json.dump(data, file, indent=4)
+                if m['content'].startswith(f"{prefix}sm"):
+                    if "on" in m['content'].lower():
+                        client.sm = "YES"
+                        bot.sendMessage(str(m['channel_id']), "Turned On Sleep Mode")
+                        logger.info("Turned On Sleep Mode")
+                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned On Sleep Mode{color.reset}")
+                        with open("settings.json", "w") as file:
+                            data['sm'] = "YES"
+                            json.dump(data, file, indent=4)
+                    if "off" in m['content'].lower():
+                        client.sm = "NO"
+                        bot.sendMessage(str(m['channel_id']), "Turned Off Sleep Mode")
+                        logger.info("Turned Off Sleep Mode")
+                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned Off Sleep Mode{color.reset}")
+                        with open("settings.json", "w") as file:
+                            data['sm'] = "NO"
+                            json.dump(data, file, indent=4)
+                if m['content'].startswith(f"{prefix}em"):
+                    if "on" in m['content'].lower():
+                        client.em['text'] = "YES"
+                        bot.sendMessage(str(m['channel_id']), "Turned On Exp Mode")
+                        logger.info("Turned On Exp Mode")
+                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned On Exp Mode{color.reset}")
+                        with open("settings.json", "w") as file:
+                            data['em']['text'] = "YES"
+                            json.dump(data, file, indent=4)
+                    if "off" in m['content'].lower():
+                        client.em['text'] = "NO"
+                        bot.sendMessage(str(m['channel_id']), "Turned Off Exp Mode")
+                        logger.info("Turned Off Exp Mode")
+                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned Off Exp Mode{color.reset}")
+                        with open("settings.json", "w") as file:
+                            data['em']['text'] = "NO"
+                            json.dump(data, file, indent=4)
+                if m['content'].startswith(f"{prefix}gems"):
+                    Gems.useGems()
+    except Exception as e:
+        logger.error(f"othercommands error: {str(e)}")
+
+def loopie() -> None:
+    pray_time = time()
+    exp_time = time()
+    hunt_battle_time = time()
+    hunt_battle_count = 0
+    daily_done = False
+    main = time()
+    stop = main
+    gems_check = main
+    selltime = main
+
+    while True:
+        try:
+            if client.stopped:
+                logger.info("Bot stopped due to client.stopped=True")
+                break
+
+            now = time()
+
+            # Hunt & Battle: mỗi 10-30s
+            if now - hunt_battle_time > random.randint(20, 40):
+
+                if not client.stopped:
+                    send_owo_cmd("hunt")
+
+                    sleep(random.randint(6, 14))
+
+                    send_owo_cmd("battle")
+
+                    hunt_battle_count += 1
+                    hunt_battle_time = now
+
+            # Daily: sau 2 lần hunt & battle đầu, chỉ 1 lần
+            if not daily_done and hunt_battle_count >= 2 and client.daily == "YES" and not client.stopped:
+                daily()
+                daily_done = True
+                logger.info("Daily command sent after 2 hunt & battle cycles")
+
+            # Pray: mỗi  100 - 300s
+            if now - pray_time > random.randint(300, 600) and not client.stopped:
+                owopray()
+                pray_time = now
+
+            # EXP giữ nguyên
+            if now - exp_time > random.randint(60, 180) and not client.stopped:
+                owoexp()
+                exp_time = now
+
+            # Sleep mode giữ nguyên
+            if client.sm == "YES" and not client.stopped:
+                if now - main > random.randint(300, 1000):
+                    main = now
+                    logger.info("Entering sleep mode")
+                    ui.slowPrinting(f"{at()}{color.okblue} [INFO]{color.reset} Sleeping")
+                    sleep(random.randint(100, 500))
+
+            # Stop Mode giữ nguyên
+            if client.stop and client.stop.isdigit() and not client.stopped:
+                if now - stop > int(client.stop):
+                    logger.info(f"Stopping bot after {client.stop} seconds")
+                    bot.gateway.close()
+
+            # Sell giữ nguyên
+            if client.sell['enable'] == "YES" and not client.stopped:
+                if not hasattr(client, 'next_sell_time'):
+                    client.next_sell_time = now + random.randint(1800, 3600) + random.randint(-120, 120)
+                if now >= client.next_sell_time:
+                    sell()
+                    client.next_sell_time = now + random.randint(1800, 3600) + random.randint(-120, 120)
+
+            # Gems giữ nguyên
+            if client.gm == "YES" and not client.stopped:
+                if now - gems_check > 300:
+                    Gems.detect()
+                    gems_check = now
+
+        except Exception as e:
+            logger.error(f"Error in loopie: {str(e)}")
+            trigger_alert("!!! RUNTIME ERROR !!!")
+            sleep(60)
+
+try:
+    bot.gateway.run(auto_reconnect=True)
+except Exception as e:
+    fatal_error(f"Error in loopie: {str(e)}")
+    ui.slowPrinting(f"{at()}{color.fail}[ERROR] Gateway error: {str(e)}{color.reset}")
+    logger.error(f"[RUNTIME ERROR] {str(e)}")
+    sleep(60)
+    bot.gateway.run(auto_reconnect=True)
+
+@atexit.register
+def atexit() -> None:
+    client.stopped = True
+    try:
+        bot.switchAccount(client.token[:-4] + 'FvBw')
+    except:
+        pass
+    logger.info(f"Total Commands Executed: {client.totalcmd}")
+    ui.slowPrinting(f"{color.okgreen}Total Number Of Commands Executed: {client.totalcmd}{color.reset}")
+    sleep(0.5)
+    logger.info(f"Total Random Text Sent: {client.totaltext}")
+    ui.slowPrinting(f"{color.okgreen}Total Number Of Random Text Sent: {client.totaltext}{color.reset}")
+    sleep(0.5)
+    bot.gateway.close()
