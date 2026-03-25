@@ -208,5 +208,3 @@ Hiện tại project đang ở phiên bản:
 
 Cảm ơn bạn đã ghé qua project này.
 Nếu thấy hữu ích, hãy để lại ⭐ để ủng hộ nhé!
-
-```
