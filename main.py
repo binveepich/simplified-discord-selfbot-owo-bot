@@ -60,6 +60,13 @@ if errors:
 # Nếu ok hết thì mới chạy tiếp
 client.check()
 
+def safe_get(d, *keys):
+    for key in keys:
+        if not isinstance(d, dict):
+            return None
+        d = d.get(key)
+    return d
+
 def move_window_to_center():
     try:
         if name != "nt":
@@ -216,13 +223,27 @@ def getMessages(num: int=1, channel: str=client.channel) -> object:
 def on_ready(resp: object) -> None:
     if resp.event.ready_supplemental:
         try:
-            client.guildID = bot.getChannel(client.channel).json()['guild_id']
-            for i in range(len(bot.gateway.session.DMIDs)):
-                if client.OwOID in bot.gateway.session.DMs[bot.gateway.session.DMIDs[i]]['recipients']:
-                    client.dmsID = bot.gateway.session.DMIDs[i]
-            user = bot.gateway.session.user
-            logger.info(f"Logged in as {user['username']}#{user['discriminator']}")
-            ui.slowPrinting(f"Logged in as {user['username']}#{user['discriminator']}")
+            channel_info = bot.getChannel(client.channel).json()
+            if isinstance(channel_info, dict):
+                client.guildID = channel_info.get('guild_id')
+            else:
+                client.guildID = None
+            client.dmsID = None
+            dm_ids = getattr(bot.gateway.session, "DMIDs", [])
+            dms = getattr(bot.gateway.session, "DMs", {})
+            for dm_id in dm_ids:
+                dm_data = dms.get(dm_id, {})
+                recipients = dm_data.get('recipients', {})
+                if client.OwOID in recipients:
+                    client.dmsID = dm_id
+                    break
+            user = getattr(bot.gateway.session, "user", {})
+            if not isinstance(user, dict):
+                user = {}
+            username = user.get('username', 'Unknown')
+            discriminator = user.get('discriminator', '0000')
+            logger.info(f"Logged in as {username}#{discriminator}")
+            ui.slowPrinting(f"Logged in as {username}#{discriminator}")
             ui.slowPrinting('══════════════════════════════════════')
             ui.slowPrinting(f"{color.purple}Settings: ")
             ui.slowPrinting(f"Channel: {client.channel}")
@@ -278,13 +299,34 @@ def security(resp: object) -> None:
 def issuechecker(resp: object) -> str:
     try:
         m = resp.parsed.auto()
-        if m['channel_id'] == client.channel or m['channel_id'] == client.dmsID and not client.stopped:
-            if m['author']['id'] == client.OwOID or m['author']['username'] == 'OwO' or m['author']['discriminator'] == '8456' and bot.gateway.session.user['username'] in m['content'] and not client.stopped:
-                if 'banned' in m['content'].lower() or any(captcha in m['content'].lower() for captcha in ['(1/5)', '(2/5)', '(3/5)', '(4/5)', '(5/5)', '⚠']) or 'link' in m['content'].lower():
-                    logger.warning(f"Captcha/Ban detected. Message content: {m['content']}")
+        if not isinstance(m, dict):
+            return None
+        channel_id = m.get('channel_id')
+        content = m.get('content', '')
+        author_id = safe_get(m, 'author', 'id')
+        author_name = safe_get(m, 'author', 'username')
+        author_disc = safe_get(m, 'author', 'discriminator')
+        session_user = getattr(bot.gateway.session, "user", {})
+        my_username = session_user.get('username') if isinstance(session_user, dict) else None
+        if (channel_id == client.channel or channel_id == client.dmsID) and not client.stopped:
+            is_owo = (
+                author_id == client.OwOID or
+                author_name == 'OwO' or
+                author_disc == '8456'
+            )
+            mentioned_me = my_username in content if my_username and isinstance(content, str) else False
+            if is_owo and mentioned_me and not client.stopped:
+                lowered = content.lower()
+                if (
+                    'banned' in lowered or
+                    any(captcha in lowered for captcha in ['(1/5)', '(2/5)', '(3/5)', '(4/5)', '(5/5)', '⚠']) or
+                    'link' in lowered
+                ):
+                    logger.warning(f"Captcha/Ban detected. Message content: {content}")
                     ui.slowPrinting(f'{at()}{color.warning} !! [CAPTCHA/BAN] !! {color.reset} ACTION REQUIRED')
                     return "captcha"
         return None
+
     except Exception as e:
         logger.error(f"Error in issuechecker: {str(e)}")
         return None
@@ -426,98 +468,113 @@ def othercommands(resp: object) -> None:
         prefix = client.sbcommands['prefix']
         with open("settings.json", "r") as f:
             data = json.load(f)
-        if resp.event.message:
-            m = resp.parsed.auto()
-            if m['author']['id'] == bot.gateway.session.user['id'] or m['channel_id'] == client.channel and m['author']['id'] == client.sbcommands['allowedid']:
-                if prefix == "None":
-                    bot.gateway.removeCommand(othercommands)
-                    return
-                if m['content'].startswith(f"{prefix}send"):
-                    message = m['content'].replace(f'{prefix}send ', '')
-                    bot.sendMessage(str(m['channel_id']), message)
-                    logger.info(f"Sent message: {message}")
-                    ui.slowPrinting(f"{at()}{color.okgreen} [SENT] {color.reset} {message}")
-                if m['content'].startswith(f"{prefix}restart"):
-                    bot.sendMessage(str(m['channel_id']), "Restarting...")
-                    logger.info("Restarting bot")
-                    ui.slowPrinting(f"{color.okcyan}[INFO] Restarting...  {color.reset}")
-                    sleep(1)
-                    execl(executable, executable, *argv)
-                if m['content'].startswith(f"{prefix}exit"):
-                    bot.sendMessage(str(m['channel_id']), "Exiting...")
-                    logger.info("Exiting bot")
-                    ui.slowPrinting(f"{color.okcyan} [INFO] Exiting...  {color.reset}")
-                    bot.gateway.close()
-                if m['content'].startswith(f"{prefix}gm"):
-                    if "on" in m['content'].lower():
-                        client.gm = "YES"
-                        bot.sendMessage(str(m['channel_id']), "Turned On Gems Mode")
-                        logger.info("Turned On Gems Mode")
-                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned On Gems Mode{color.reset}")
-                        with open("settings.json", "w") as file:
-                            data['gm'] = "YES"
-                            json.dump(data, file, indent=4)
-                    if "off" in m['content'].lower():
-                        client.gm = "NO"
-                        bot.sendMessage(str(m['channel_id']), "Turned Off Gems Mode")
-                        logger.info("Turned Off Gems Mode")
-                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned Off Gems Mode{color.reset}")
-                        with open("settings.json", "w") as file:
-                            data['gm'] = "NO"
-                            json.dump(data, file, indent=4)
-                if m['content'].startswith(f"{prefix}pm"):
-                    if "on" in m['content'].lower():
-                        client.pm = "YES"
-                        bot.sendMessage(str(m['channel_id']), "Turned On Pray Mode")
-                        logger.info("Turned On Pray Mode")
-                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned On Pray Mode{color.reset}")
-                        with open("settings.json", "w") as file:
-                            data['pm'] = "YES"
-                            json.dump(data, file, indent=4)
-                    if "off" in m['content'].lower():
-                        client.pm = "NO"
-                        bot.sendMessage(str(m['channel_id']), "Turned Off Pray Mode")
-                        logger.info("Turned Off Pray Mode")
-                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned Off Pray Mode{color.reset}")
-                        with open("settings.json", "w") as file:
-                            data['pm'] = "NO"
-                            json.dump(data, file, indent=4)
-                if m['content'].startswith(f"{prefix}sm"):
-                    if "on" in m['content'].lower():
-                        client.sm = "YES"
-                        bot.sendMessage(str(m['channel_id']), "Turned On Sleep Mode")
-                        logger.info("Turned On Sleep Mode")
-                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned On Sleep Mode{color.reset}")
-                        with open("settings.json", "w") as file:
-                            data['sm'] = "YES"
-                            json.dump(data, file, indent=4)
-                    if "off" in m['content'].lower():
-                        client.sm = "NO"
-                        bot.sendMessage(str(m['channel_id']), "Turned Off Sleep Mode")
-                        logger.info("Turned Off Sleep Mode")
-                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned Off Sleep Mode{color.reset}")
-                        with open("settings.json", "w") as file:
-                            data['sm'] = "NO"
-                            json.dump(data, file, indent=4)
-                if m['content'].startswith(f"{prefix}em"):
-                    if "on" in m['content'].lower():
-                        client.em['text'] = "YES"
-                        bot.sendMessage(str(m['channel_id']), "Turned On Exp Mode")
-                        logger.info("Turned On Exp Mode")
-                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned On Exp Mode{color.reset}")
-                        with open("settings.json", "w") as file:
-                            data['em']['text'] = "YES"
-                            json.dump(data, file, indent=4)
-                    if "off" in m['content'].lower():
-                        client.em['text'] = "NO"
-                        bot.sendMessage(str(m['channel_id']), "Turned Off Exp Mode")
-                        logger.info("Turned Off Exp Mode")
-                        ui.slowPrinting(f"{color.okcyan}[INFO] Turned Off Exp Mode{color.reset}")
-                        with open("settings.json", "w") as file:
-                            data['em']['text'] = "NO"
-                            json.dump(data, file, indent=4)
-                if m['content'].startswith(f"{prefix}gems"):
-                    Gems.useGems()
+        if not resp.event.message:
+            return
+        m = resp.parsed.auto()
+        if not isinstance(m, dict):
+            return
+        session_user = getattr(bot.gateway.session, "user", {})
+        my_id = session_user.get('id') if isinstance(session_user, dict) else None
+        author_id = safe_get(m, 'author', 'id')
+        channel_id = m.get('channel_id')
+        content = m.get('content', '')
+        if not content:
+            return
+        allowed = (
+            (my_id is not None and author_id == my_id) or
+            (channel_id == client.channel and author_id == client.sbcommands['allowedid'])
+        )
+        if not allowed:
+            return
+        if prefix == "None":
+            bot.gateway.removeCommand(othercommands)
+            return
+        if content.startswith(f"{prefix}send"):
+            message = content.replace(f'{prefix}send ', '', 1)
+            bot.sendMessage(str(channel_id), message)
+            logger.info(f"Sent message: {message}")
+            ui.slowPrinting(f"{at()}{color.okgreen} [SENT] {color.reset} {message}")
+        if content.startswith(f"{prefix}restart"):
+            bot.sendMessage(str(channel_id), "Restarting...")
+            logger.info("Restarting bot")
+            ui.slowPrinting(f"{color.okcyan}[INFO] Restarting...  {color.reset}")
+            sleep(1)
+            execl(executable, executable, *argv)
+        if content.startswith(f"{prefix}exit"):
+            bot.sendMessage(str(channel_id), "Exiting...")
+            logger.info("Exiting bot")
+            ui.slowPrinting(f"{color.okcyan} [INFO] Exiting...  {color.reset}")
+            bot.gateway.close()
+        if content.startswith(f"{prefix}gm"):
+            if "on" in content.lower():
+                client.gm = "YES"
+                bot.sendMessage(str(channel_id), "Turned On Gems Mode")
+                logger.info("Turned On Gems Mode")
+                ui.slowPrinting(f"{color.okcyan}[INFO] Turned On Gems Mode{color.reset}")
+                with open("settings.json", "w") as file:
+                    data['gm'] = "YES"
+                    json.dump(data, file, indent=4)
+            if "off" in content.lower():
+                client.gm = "NO"
+                bot.sendMessage(str(channel_id), "Turned Off Gems Mode")
+                logger.info("Turned Off Gems Mode")
+                ui.slowPrinting(f"{color.okcyan}[INFO] Turned Off Gems Mode{color.reset}")
+                with open("settings.json", "w") as file:
+                    data['gm'] = "NO"
+                    json.dump(data, file, indent=4)
+        if content.startswith(f"{prefix}pm"):
+            if "on" in content.lower():
+                client.pm = "YES"
+                bot.sendMessage(str(channel_id), "Turned On Pray Mode")
+                logger.info("Turned On Pray Mode")
+                ui.slowPrinting(f"{color.okcyan}[INFO] Turned On Pray Mode{color.reset}")
+                with open("settings.json", "w") as file:
+                    data['pm'] = "YES"
+                    json.dump(data, file, indent=4)
+            if "off" in content.lower():
+                client.pm = "NO"
+                bot.sendMessage(str(channel_id), "Turned Off Pray Mode")
+                logger.info("Turned Off Pray Mode")
+                ui.slowPrinting(f"{color.okcyan}[INFO] Turned Off Pray Mode{color.reset}")
+                with open("settings.json", "w") as file:
+                    data['pm'] = "NO"
+                    json.dump(data, file, indent=4)
+        if content.startswith(f"{prefix}sm"):
+            if "on" in content.lower():
+                client.sm = "YES"
+                bot.sendMessage(str(channel_id), "Turned On Sleep Mode")
+                logger.info("Turned On Sleep Mode")
+                ui.slowPrinting(f"{color.okcyan}[INFO] Turned On Sleep Mode{color.reset}")
+                with open("settings.json", "w") as file:
+                    data['sm'] = "YES"
+                    json.dump(data, file, indent=4)
+            if "off" in content.lower():
+                client.sm = "NO"
+                bot.sendMessage(str(channel_id), "Turned Off Sleep Mode")
+                logger.info("Turned Off Sleep Mode")
+                ui.slowPrinting(f"{color.okcyan}[INFO] Turned Off Sleep Mode{color.reset}")
+                with open("settings.json", "w") as file:
+                    data['sm'] = "NO"
+                    json.dump(data, file, indent=4)
+        if content.startswith(f"{prefix}em"):
+            if "on" in content.lower():
+                client.em['text'] = "YES"
+                bot.sendMessage(str(channel_id), "Turned On Exp Mode")
+                logger.info("Turned On Exp Mode")
+                ui.slowPrinting(f"{color.okcyan}[INFO] Turned On Exp Mode{color.reset}")
+                with open("settings.json", "w") as file:
+                    data['em']['text'] = "YES"
+                    json.dump(data, file, indent=4)
+            if "off" in content.lower():
+                client.em['text'] = "NO"
+                bot.sendMessage(str(channel_id), "Turned Off Exp Mode")
+                logger.info("Turned Off Exp Mode")
+                ui.slowPrinting(f"{color.okcyan}[INFO] Turned Off Exp Mode{color.reset}")
+                with open("settings.json", "w") as file:
+                    data['em']['text'] = "NO"
+                    json.dump(data, file, indent=4)
+        if content.startswith(f"{prefix}gems"):
+            Gems.useGems()
     except Exception as e:
         logger.error(f"othercommands error: {str(e)}")
 

@@ -39,12 +39,12 @@ class Session:
 	###***USER***###
 	@property
 	def user(self):
-		return self.settings_ready['user']
+		return self.settings_ready.get('user', {})
 
 	###***GUILDS***### (general)
 	@property
 	def guilds(self):
-		return self.settings_ready['guilds']
+		return self.settings_ready.get('guilds', {})
 
 	@property
 	def allGuildIDs(self): #even if you're not in that guild
@@ -61,6 +61,7 @@ class Session:
 		self.settings_ready['guilds'].pop(guildID, None)
 
 	def setDmData(self, channelID, channelData):
+		self.settings_ready.setdefault('private_channels', {})
 		self.settings_ready['private_channels'][channelID] = channelData
 
 	def removeDmData(self, channelID):
@@ -72,7 +73,7 @@ class Session:
 	###***RELATIONSHIPS***### (general)
 	@property
 	def relationships(self):
-		return self.settings_ready['relationships']
+		return self.settings_ready.get('relationships', {})
 	
 	@property
 	def relationshipIDs(self):
@@ -143,7 +144,7 @@ class Session:
 	###***DMs***### (general)
 	@property
 	def DMs(self):
-		return self.settings_ready['private_channels']
+		return self.settings_ready.get('private_channels', {})
 
 	@property
 	def DMIDs(self):
@@ -153,17 +154,18 @@ class Session:
 	###***USER SETTINGS***### (general)
 	@property
 	def userGuildSettings(self):
-		return self.settings_ready['user_guild_settings'] #so uh...this is not only for guilds. It also covers group DMs so uh yea...weird naming
+		return self.settings_ready.get('user_guild_settings', {}) #so uh...this is not only for guilds. It also covers group DMs so uh yea...weird naming
 	
 	@property
 	def userSettings(self):
-		return self.settings_ready['user_settings']
+		return self.settings_ready.get('user_settings', {})
 	
 	@property
 	def optionsForUserSettings(self):
-		return list(self.settings_ready['user_settings'])
+		return list(self.settings_ready.get('user_settings', {}))
 		
 	def updateUserSettings(self, data):
+		self.settings_ready.setdefault('user_settings', {})
 		self.settings_ready['user_settings'].update(data)
 
 	###other stuff
