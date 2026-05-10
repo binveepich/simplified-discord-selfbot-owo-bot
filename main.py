@@ -145,14 +145,20 @@ bot = discum.Client(token=client.token, log=False, user_agent=[
 def send_owo_cmd(cmd: str, extra_delay: bool = True) -> None:
     global last_cmd_time, last_global_cmd_time
 
-    with cmd_lock:  # 🔒 chống spam đa luồng
+    if client.stopped:
+        return
+
+    with cmd_lock:
         now = time()
 
-        # GLOBAL DELAY (quan trọng nhất)
+        if client.stopped:
+            return
+
+        # GLOBAL DELAY
         if now - last_global_cmd_time < GLOBAL_DELAY:
             return
 
-        # CMD COOLDOWN riêng
+        # CMD COOLDOWN
         if cmd in last_cmd_time:
             elapsed = now - last_cmd_time[cmd]
             if elapsed < CMD_COOLDOWN.get(cmd, 5):
@@ -161,7 +167,11 @@ def send_owo_cmd(cmd: str, extra_delay: bool = True) -> None:
         try:
             if extra_delay:
                 bot.typingAction(client.channel)
-                sleep(random.uniform(2.5, 5.5))  # ⬅️ tăng nhẹ delay
+                sleep(random.uniform(2.5, 5.5))
+
+                # 🚨 stop trong lúc sleep
+                if client.stopped:
+                    return
 
             full_cmd = f"owo {cmd}"
             response = bot.sendMessage(client.channel, full_cmd)
@@ -314,14 +324,28 @@ def issuechecker(resp: object) -> str:
                 author_name == 'OwO' or
                 author_disc == '8456'
             )
-            mentioned_me = my_username in content if my_username and isinstance(content, str) else False
+            my_id = session_user.get('id') if isinstance(session_user, dict) else None
+
+            mentioned_me = (
+                f"<@{my_id}>" in content or
+                f"<@!{my_id}>" in content
+            ) if my_id and isinstance(content, str) else False
             if is_owo and mentioned_me and not client.stopped:
                 lowered = content.lower()
-                if (
-                    'banned' in lowered or
-                    any(captcha in lowered for captcha in ['(1/5)', '(2/5)', '(3/5)', '(4/5)', '(5/5)', '⚠']) or
-                    'link' in lowered
-                ):
+                captcha_keywords = [
+                    "captcha",
+                    "verify that you are human",
+                    "please complete",
+                    "(1/5)",
+                    "(2/5)",
+                    "(3/5)",
+                    "(4/5)",
+                    "(5/5)",
+                    "⚠",
+                    "banned",
+                    "macros or botting"
+                ]
+                if any(k in lowered for k in captcha_keywords):
                     logger.warning(f"Captcha/Ban detected. Message content: {content}")
                     ui.slowPrinting(f'{at()}{color.warning} !! [CAPTCHA/BAN] !! {color.reset} ACTION REQUIRED')
                     return "captcha"
@@ -338,13 +362,18 @@ def runner() -> None:
         bot.typingAction(client.channel)
         sleep(random.randint(8, 18))
 
+        if client.stopped:
+            return
+        
         if not client.stopped:
             send_owo_cmd("hunt")
 
-        sleep(random.randint(6, 14))   # delay giữa hunt & battle
+        sleep(random.randint(6, 14))
 
-        if not client.stopped:
-            send_owo_cmd("battle")
+        if client.stopped:
+            return
+
+        send_owo_cmd("battle")
 
         sleep(random.randint(wbm[0], wbm[1] + 10))  # tăng nhẹ để an toàn hơn
 
