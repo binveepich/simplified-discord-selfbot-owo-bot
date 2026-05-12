@@ -26,29 +26,29 @@ class data:
                 data = json.load(file)
                 self.token = data.get("token", "")
                 self.channel = data.get("channel", "")
-                self.gm = "YES" if data.get("gm") else "NO"
-                self.sm = "YES" if data.get("sm") else "NO"
-                self.pm = "YES" if data.get("pm") else "NO"
+                self.gm = "YES" if str(data.get("gm", "NO")).upper() == "YES" else "NO"
+                self.sm = "YES" if str(data.get("sm", "NO")).upper() == "YES" else "NO"
+                self.pm = "YES" if str(data.get("pm", "NO")).upper() == "YES" else "NO"
                 self.em = {
-                    "text": "YES" if data.get("em", {}).get("text") else "NO",
-                    "owo": "YES" if data.get("em", {}).get("owo") else "NO"
+                    "text": "YES" if str(data.get("em", {}).get("text", "NO")).upper() == "YES" else "NO",
+                    "owo": "YES" if str(data.get("em", {}).get("owo", "NO")).upper() == "YES" else "NO"
                 }
                 self.sbcommands = {
                     "prefix": data.get("sbcommands", {}).get("prefix", "."),
                     "allowedid": data.get("sbcommands", {}).get("allowedid"),
-                    "enable": "YES" if data.get("sbcommands", {}).get("enable") else "NO"
+                    "enable": "YES" if str(data.get("sbcommands", {}).get("enable", "NO")).upper() == "YES" else "NO"
                 }
                 self.webhook = {
                     "link": data.get("webhook", {}).get("link"),
                     "ping": data.get("webhook", {}).get("ping")
                 }
-                self.daily = "YES" if data.get("daily") else "NO"
+                self.daily = "YES" if str(data.get("daily", "NO")).upper() == "YES" else "NO"
                 self.stop = data.get("stop", "0")
                 self.sell = {
-                    "enable": "YES" if data.get("sell", {}).get("enable") else "NO",
+                    "enable": "YES" if str(data.get("sell", {}).get("enable", "NO")).upper() == "YES" else "NO",
                     "types": data.get("sell", {}).get("types", "all")
                 }
-                self.change = "YES" if data.get("change") else "NO"
+                self.change = "YES" if str(data.get("change", "NO")).upper() == "YES" else "NO"
                 self.dmsID = None
                 self.guildID = None
         except FileNotFoundError:
