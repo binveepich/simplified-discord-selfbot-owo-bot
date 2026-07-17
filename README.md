@@ -166,25 +166,26 @@ Nếu bật `sbcommands`, bạn có thể dùng:
 
 ---
 
-## FAQ
+## Câu hỏi thường gặp
 
-#### How Much Money It Can Earn In One Day?
+#### Có thể kiếm được bao nhiêu tiền trong một ngày?
 
-Around 1.500.000 Cowoncys With Mythical+ Gems
 
-#### Can This Selfbot Run Efficiency On New Accounts?
+Khoảng 1.500.000 Cowoncy với Kim cương Huyền thoại trở lên
 
-Nope, This Selfbot Can't Run Efficiency On New Accounts. You Need Atleast A Battle Team And Some Gems First Because This Selfbot Can't Build A Perfect Account From Zero.
+#### Selfbot này có hoạt động hiệu quả trên tài khoản mới không?
 
-#### Can I Get Banned From OwO?
+Không, Selfbot này không thể hoạt động hiệu quả trên tài khoản mới. Bạn cần ít nhất một đội hình chiến đấu và một số Kim cương trước vì Selfbot này không thể xây dựng một tài khoản hoàn hảo từ con số không.
 
-Yes, Only If You Don't Solve The Captcha From OwO. This Selfbot Will Automatically If Captcha Is Asked. But You Still Need To Solve It
+#### Tôi có thể bị cấm khỏi OwO không?
 
-#### Can I Run It With My Android Phone?
+Có, chỉ khi bạn không giải được Captcha của OwO. Selfbot này sẽ tự động xử lý nếu được yêu cầu Captcha. Nhưng bạn vẫn cần phải giải nó.
 
-Yes, Termux Apps Can Run Python Codes And Others Programming Language Like Git Or Javascript. You Can Use It To Install The Selfbot With The Given Tutorial. More Information: https://termux.com/
+#### Tôi có thể chạy nó trên điện thoại Android của mình không?
 
-Have More Questions? Feel Free To Open Issues Or Contact Me On Discord: [join my discord server](https://discord.gg/c7tRHWKhhP) then tag @youzke
+Có, ứng dụng Termux có thể chạy mã Python và các ngôn ngữ lập trình khác như Git hoặc Javascript. Bạn có thể sử dụng nó để cài đặt Selfbot theo hướng dẫn được cung cấp. Thông tin thêm: https://termux.com/
+
+Còn câu hỏi nào khác? Hãy thoải mái mở vấn đề hoặc liên hệ với tôi trên Discord: [tham gia máy chủ Discord của tôi](https://discord.gg/c7tRHWKhhP) rồi gắn thẻ @youzke
 
 ---
 
