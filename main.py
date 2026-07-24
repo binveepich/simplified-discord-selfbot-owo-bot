@@ -21,6 +21,7 @@ from menu import UI
 from color import color
 from data import data
 from gems import gems
+from weapons import weapons
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -196,6 +197,7 @@ def send_owo_cmd(cmd: str, extra_delay: bool = True) -> None:
             return
 
 Gems = gems(bot, start_time)
+Weapons = weapons(bot, start_time)
 
 system('cls' if name == 'nt' else 'clear')
 ui.logo()
@@ -258,6 +260,7 @@ def on_ready(resp: object) -> None:
             ui.slowPrinting(f"{color.purple}Settings: ")
             ui.slowPrinting(f"Channel: {client.channel}")
             ui.slowPrinting(f"Gems Mode: {client.gm}")
+            ui.slowPrinting(f"Weapon Mode: {client.wm}")
             ui.slowPrinting(f"Sleep Mode: {client.sm}")
             ui.slowPrinting(f"Pray Mode: {client.pm}")
             ui.slowPrinting(f"EXP Mode: {client.em['text']}")
@@ -551,6 +554,23 @@ def othercommands(resp: object) -> None:
                 with open("settings.json", "w") as file:
                     data['gm'] = "NO"
                     json.dump(data, file, indent=4)
+        if content.startswith(f"{prefix}wm"):
+            if "on" in content.lower():
+                client.wm = "YES"
+                bot.sendMessage(str(channel_id), "Turned On Weapon Mode")
+                logger.info("Turned On Weapon Mode")
+                ui.slowPrinting(f"{color.okcyan}[INFO] Turned On Weapon Mode{color.reset}")
+                with open("settings.json", "w") as file:
+                    data['wm'] = "YES"
+                    json.dump(data, file, indent=4)
+            if "off" in content.lower():
+                client.wm = "NO"
+                bot.sendMessage(str(channel_id), "Turned Off Weapon Mode")
+                logger.info("Turned Off Weapon Mode")
+                ui.slowPrinting(f"{color.okcyan}[INFO] Turned Off Weapon Mode{color.reset}")
+                with open("settings.json", "w") as file:
+                    data['wm'] = "NO"
+                    json.dump(data, file, indent=4)
         if content.startswith(f"{prefix}pm"):
             if "on" in content.lower():
                 client.pm = "YES"
@@ -610,6 +630,9 @@ def othercommands(resp: object) -> None:
 def loopie() -> None:
     pray_time = time()
     exp_time = time()
+    weapons_check = time()
+    cycles_since_last_weapon = 0
+    max_cycles_before_weapon = random.randint(1, 4)
     hunt_battle_time = time()
     hunt_battle_count = 0
     daily_done = False
@@ -637,6 +660,7 @@ def loopie() -> None:
                     send_owo_cmd("battle")
 
                     hunt_battle_count += 1
+                    cycles_since_last_weapon += 1  # ✅ Thêm dòng này
                     hunt_battle_time = now
 
             # Daily: sau 2 lần hunt & battle đầu, chỉ 1 lần
@@ -683,6 +707,16 @@ def loopie() -> None:
                     Gems.detect()
                     gems_check = now
 
+            # Weapons: mua crate (chỉ sau khi đạt đủ số chu kỳ)
+            if client.wm == "YES" and not client.stopped:
+                if cycles_since_last_weapon >= max_cycles_before_weapon:
+                    if now - weapons_check > 5:
+                        Weapons.buy_one_crate()
+                        weapons_check = now
+                        cycles_since_last_weapon = 0  # Reset cycle
+                        # Random cycle mới cho lần tiếp theo
+                        max_cycles_before_weapon = random.randint(1, 4)
+                        
         except Exception as e:
             logger.error(f"Error in loopie: {str(e)}")
             trigger_alert("!!! RUNTIME ERROR !!!")

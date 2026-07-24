@@ -27,6 +27,7 @@ class data:
                 self.token = data.get("token", "")
                 self.channel = data.get("channel", "")
                 self.gm = "YES" if str(data.get("gm", "NO")).upper() == "YES" else "NO"
+                self.wm = "YES" if str(data.get("wm", "NO")).upper() == "YES" else "NO"  # ← THÊM DÒNG NÀY
                 self.sm = "YES" if str(data.get("sm", "NO")).upper() == "YES" else "NO"
                 self.pm = "YES" if str(data.get("pm", "NO")).upper() == "YES" else "NO"
                 self.em = {

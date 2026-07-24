@@ -1,7 +1,8 @@
 {
     "token": "",
     "channel": "",
-    "gm": "YES",  
+    "gm": "YES",
+    "wm": "YES",  
     "sm": "YES",  
     "pm": "YES", 
     "em": {     
@@ -18,7 +19,7 @@
         "allowedid": null
     },
     "daily": "YES",
-    "stop": "9000",
+    "stop": "22222",
     "sell": {
         "enable": "YES",
         "types": "all"
